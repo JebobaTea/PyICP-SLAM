@@ -1,4 +1,7 @@
-# PyICP SLAM
+# PyICP SLAM for Oakton ARC
+
+Originally by Gibsi Kim et al, modified for Oakton's Autonomous Racing club to accept YDLidar G4 scans and perform map building.
+
 Full-python LiDAR SLAM.
 - If you find a C++ version of this repo, go to [SC-LeGO-LOAM](https://github.com/irapkaist/SC-LeGO-LOAM) or [SC-A-LOAM](https://github.com/gisbi-kim/SC-A-LOAM).
 
