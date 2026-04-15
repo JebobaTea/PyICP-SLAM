@@ -70,7 +70,7 @@ def nearest_neighbor(src, dst):
     return distances.ravel(), indices.ravel()
 
 
-def icp(A, B, init_pose=None, max_iterations=20, tolerance=0.001):
+def icp(A, B, init_pose=None, max_iterations=20, tolerance=0.00000001):
     '''
     The Iterative Closest Point method: finds best-fit transform that maps points A on to points B
     Input:
@@ -86,7 +86,6 @@ def icp(A, B, init_pose=None, max_iterations=20, tolerance=0.001):
     '''
 
     assert A.shape == B.shape
-
     # get number of dimensions
     m = A.shape[1]
 
@@ -121,5 +120,6 @@ def icp(A, B, init_pose=None, max_iterations=20, tolerance=0.001):
     # calculate final transformation
     T,_,_ = best_fit_transform(A, src[:m,:].T)
 
+    # print("Convergence in # iterations: " + str(i))
     return T, distances, i
 
