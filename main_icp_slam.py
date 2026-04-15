@@ -6,6 +6,7 @@ import time
 import random
 import argparse
 
+import numpy
 import numpy as np
 np.set_printoptions(precision=4)
 from matplotlib.animation import FFMpegWriter
@@ -22,28 +23,23 @@ import open3d as o3d
 # params
 parser = argparse.ArgumentParser(description='PyICP SLAM arguments')
 
-parser.add_argument('--num_icp_points', type=int, default=5000) # 5000 is enough for real time
-
+parser.add_argument('--num_icp_points', type=int, default=2500) # 5000 is enough for real time
 parser.add_argument('--num_rings', type=int, default=20) # same as the original paper
 parser.add_argument('--num_sectors', type=int, default=60) # same as the original paper
 parser.add_argument('--num_candidates', type=int, default=10) # must be int
 parser.add_argument('--try_gap_loop_detection', type=int, default=10) # same as the original paper
-
 parser.add_argument('--loop_threshold', type=float, default=0.11) # 0.11 is usually safe (for avoiding false loop closure)
-
-parser.add_argument('--data_base_dir', type=str, 
-                    default='/your/path/.../data_odometry_velodyne/dataset/sequences')
+parser.add_argument('--data_dir', type=str,
+                    default='data/')
 parser.add_argument('--sequence_idx', type=str, default='00')
-
-parser.add_argument('--save_gap', type=int, default=300)
-
+parser.add_argument('--save_gap', type=int, default=1)
 parser.add_argument('--use_open3d', action='store_true')
 
 args = parser.parse_args()
 
 # dataset 
-sequence_dir = os.path.join(args.data_base_dir, args.sequence_idx, 'velodyne')
-sequence_manager = Ptutils.KittiScanDirManager(sequence_dir)
+sequence_dir = args.data_dir
+sequence_manager = Ptutils.ARCScanDirManager(sequence_dir)
 scan_paths = sequence_manager.scan_fullpaths
 num_frames = len(scan_paths)
 
@@ -68,19 +64,22 @@ SCM = ScanContextManager(shape=[args.num_rings, args.num_sectors],
 # for save the results as a video
 fig_idx = 1
 fig = plt.figure(fig_idx)
-writer = FFMpegWriter(fps=15)
+writer = FFMpegWriter(fps=5)
 video_name = args.sequence_idx + "_" + str(args.num_icp_points) + ".mp4"
-num_frames_to_skip_to_show = 5
+num_frames_to_skip_to_show = 1
 num_frames_to_save = np.floor(num_frames/num_frames_to_skip_to_show)
+cumul_transform = None
 with writer.saving(fig, video_name, num_frames_to_save): # this video saving part is optional
 
     # @@@ MAIN @@@: data stream
     for for_idx, scan_path in tqdm(enumerate(scan_paths), total=num_frames, mininterval=5.0):
 
         # get current information     
-        curr_scan_pts = Ptutils.readScan(scan_path) 
-        curr_scan_down_pts = Ptutils.random_sampling(curr_scan_pts, num_points=args.num_icp_points)
+        curr_scan_pts = Ptutils.readScan(scan_path)
 
+        curr_scan_down_pts = Ptutils.random_sampling(curr_scan_pts, num_points=args.num_icp_points)
+        if not curr_scan_down_pts.all():
+            continue
         # save current node
         PGM.curr_node_idx = for_idx # make start with 0
         SCM.addNode(node_idx=PGM.curr_node_idx, ptcloud=curr_scan_down_pts)
@@ -90,10 +89,10 @@ with writer.saving(fig, video_name, num_frames_to_save): # this video saving par
             icp_initial = np.eye(4)
             continue
 
-        
+        dnn = None
         prev_scan_down_pts = Ptutils.random_sampling(prev_scan_pts, num_points=args.num_icp_points)
-
-        if args.use_open3d: # calc odometry using custom ICP
+        if args.use_open3d: # calc odometry using opend3d
+            #print("Using Open3D")
             source = o3d.geometry.PointCloud()
             source.points = o3d.utility.Vector3dVector(curr_scan_down_pts)
 
@@ -103,15 +102,40 @@ with writer.saving(fig, video_name, num_frames_to_save): # this video saving par
             reg_p2p = o3d.pipelines.registration.registration_icp(
                                                                 source = source, 
                                                                 target = target, 
-                                                                max_correspondence_distance = 10, 
+                                                                max_correspondence_distance = 0.5,
                                                                 init = icp_initial, 
                                                                 estimation_method = o3d.pipelines.registration.TransformationEstimationPointToPoint(), criteria = o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=20)
                                                                 )
             odom_transform = reg_p2p.transformation 
-        else:   # calc odometry using open3d
-            odom_transform, _, _ = ICP.icp(curr_scan_down_pts, prev_scan_down_pts, init_pose=icp_initial, max_iterations=20)
+        else:   # calc odometry using custom ICP
+            #print("Using custom ICP")
+            odom_transform, dnn, _ = ICP.icp(curr_scan_down_pts, prev_scan_down_pts, init_pose=icp_initial, max_iterations=50)
 
-        # update the current (moved) pose 
+
+        # ARC TESTING PORTION
+        # points are Nxm and odom_transform should be m+1 x m+1
+        m = curr_scan_pts.shape[1]
+        victim = np.ones((m + 1, curr_scan_pts.shape[0]))
+        victim[:m, :] = np.copy(curr_scan_pts.T) # conversion to homogenous coordinates
+        # print(victim.shape) (4, XYZ)
+        # print(odom_transform.shape) (4, 4)
+
+        if cumul_transform is None:
+            cumul_transform = odom_transform.T
+            ts = odom_transform.T
+
+        # apply that transformation
+        schmooved = np.dot(victim.T, cumul_transform)
+        cumul_transform = cumul_transform @ odom_transform
+
+        with open(f"result/transformed{for_idx}.npz", "wb+") as f:
+            np.save(f, np.array(schmooved))
+        with open(f"result/previous_scan{for_idx}.npz", "wb+") as f:
+            np.save(f, np.array(prev_scan_pts))
+        with open(f"result/no_transform{for_idx}.npz", "wb+") as f:
+            np.save(f, np.array(curr_scan_pts))
+
+        # update the current (moved) pose
         PGM.curr_se3 = np.matmul(PGM.curr_se3, odom_transform)
         icp_initial = odom_transform # assumption: constant velocity model (for better next ICP converges)
 
