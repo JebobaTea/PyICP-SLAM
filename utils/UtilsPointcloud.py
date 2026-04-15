@@ -3,26 +3,27 @@ import random
 import numpy as np
 
 def random_sampling(orig_points, num_points):
-    assert orig_points.shape[0] > num_points
+    # assert orig_points.shape[0] > num_points
 
-    points_down_idx = random.sample(range(orig_points.shape[0]), num_points)
-    down_points = orig_points[points_down_idx, :]
+    if (orig_points.shape[0] > num_points):
+        points_down_idx = random.sample(range(orig_points.shape[0]), num_points)
+        down_points = orig_points[points_down_idx, :]
+        return down_points
 
-    return down_points
+    print("Insufficient points: " + str(orig_points.shape[0]))
 
-def readScan(bin_path, dataset='KITTI'):
-    if(dataset == 'KITTI'):
-        return readKittiScan(bin_path)
+    return []
 
-
-def readKittiScan(bin_path):
-    scan = np.fromfile(bin_path, dtype=np.float32)
-    scan = scan.reshape((-1, 4))
-    ptcloud_xyz = scan[:, :-1]
-    return ptcloud_xyz
+# force add Z, for now
+def readScan(bin_path):
+    scan = np.load(bin_path)
+    scan_xyz = []
+    for pt in scan:
+        scan_xyz.append([pt[0], pt[1], 2.0])
+    return np.array(scan_xyz)
     
 
-class KittiScanDirManager:
+class ARCScanDirManager:
     def __init__(self, scan_dir):
         self.scan_dir = scan_dir
         
