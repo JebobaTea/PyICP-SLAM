@@ -53,8 +53,8 @@ def ptcloud2sc(ptcloud, sc_shape, max_length):
     num_points = ptcloud.shape[0]
     for pt_idx in range(num_points):
         point = ptcloud[pt_idx, :]
-        point_height = point[2] + 2.0 # for setting ground is roughly zero 
-        
+        #point_height = point[2] + 2.0 # for setting ground is roughly zero
+        point_height = 2.0 # we are force suppressing errors resulting from points being 2d only
         idx_ring, idx_sector = pt2rs(point, gap_ring, gap_sector, num_ring, num_sector)
         
         if sc_counter[idx_ring, idx_sector] >= enough_large:
