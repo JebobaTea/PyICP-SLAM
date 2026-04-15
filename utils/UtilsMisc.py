@@ -114,3 +114,5 @@ class PoseGraphResultSaver:
         plt.draw()
         plt.pause(0.01) #is necessary for the plot to update for some reason
 
+        # input("breakpoint")
+
