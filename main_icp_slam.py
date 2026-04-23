@@ -47,6 +47,12 @@ num_frames = len(scan_paths)
 PGM = PoseGraphManager()
 PGM.addPriorFactor()
 
+def homogenize(victim):
+    m = victim.shape[1]
+    res = np.ones((m + 1, victim.shape[0]))
+    res[:m, :] = np.copy(victim.T)
+    return res
+
 # Result saver
 save_dir = "result/" + args.sequence_idx
 if not os.path.exists(save_dir): os.makedirs(save_dir)
@@ -68,7 +74,6 @@ writer = FFMpegWriter(fps=5)
 video_name = args.sequence_idx + "_" + str(args.num_icp_points) + ".mp4"
 num_frames_to_skip_to_show = 1
 num_frames_to_save = np.floor(num_frames/num_frames_to_skip_to_show)
-cumul_transform = None
 with writer.saving(fig, video_name, num_frames_to_save): # this video saving part is optional
 
     # @@@ MAIN @@@: data stream
@@ -111,33 +116,23 @@ with writer.saving(fig, video_name, num_frames_to_save): # this video saving par
             #print("Using custom ICP")
             odom_transform, dnn, _ = ICP.icp(curr_scan_down_pts, prev_scan_down_pts, init_pose=icp_initial, max_iterations=50)
 
-
-        # ARC TESTING PORTION
-        # points are Nxm and odom_transform should be m+1 x m+1
-        m = curr_scan_pts.shape[1]
-        victim = np.ones((m + 1, curr_scan_pts.shape[0]))
-        victim[:m, :] = np.copy(curr_scan_pts.T) # conversion to homogenous coordinates
-        # print(victim.shape) (4, XYZ)
-        # print(odom_transform.shape) (4, 4)
-
-        if cumul_transform is None:
-            cumul_transform = odom_transform.T
-            ts = odom_transform.T
-
-        # apply that transformation
-        schmooved = np.dot(victim.T, cumul_transform)
-        cumul_transform = cumul_transform @ odom_transform
-
-        with open(f"result/transformed{for_idx}.npz", "wb+") as f:
-            np.save(f, np.array(schmooved))
-        with open(f"result/previous_scan{for_idx}.npz", "wb+") as f:
-            np.save(f, np.array(prev_scan_pts))
-        with open(f"result/no_transform{for_idx}.npz", "wb+") as f:
-            np.save(f, np.array(curr_scan_pts))
-
         # update the current (moved) pose
         PGM.curr_se3 = np.matmul(PGM.curr_se3, odom_transform)
         icp_initial = odom_transform # assumption: constant velocity model (for better next ICP converges)
+
+        # ARC TESTING PORTION
+        base = homogenize(curr_scan_pts)
+        pose = PGM.curr_se3
+        transformed = pose @ base
+        transformed = transformed.T
+        base = base.T
+
+        with open(f"result0/transformed{for_idx}.npz", "wb+") as f:
+            np.save(f, np.array(transformed))
+        with open(f"result0/no_transform{for_idx}.npz", "wb+") as f:
+            np.save(f, np.array(curr_scan_pts))
+        #with open(f"result0/pose{for_idx}.npz", "wb+") as f:
+        #    np.save(f, np.array(PGM.curr_se3))
 
         # add the odometry factor to the graph 
         PGM.addOdometryFactor(odom_transform)
