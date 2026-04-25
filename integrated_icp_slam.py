@@ -13,6 +13,7 @@ np.set_printoptions(precision=4)
 from utils.ScanContextManager import *
 from utils.PoseGraphManager import *
 from utils.UtilsMisc import *
+from utils.MapManager import *
 import utils.UtilsPointcloud as Ptutils
 import utils.ICP as ICP
 import open3d as o3d
@@ -61,9 +62,8 @@ SCM = ScanContextManager(shape=[args.num_rings, args.num_sectors],
                                         num_candidates=args.num_candidates, 
                                         threshold=args.loop_threshold)
 
-# for save the results as a video
-fig_idx = 1
-fig = plt.figure(fig_idx)
+# mapping class
+world = World(clip_prec=2, start_weight=4096, cull_threshold=10000)
 
 # @@@ MAIN @@@: data stream
 for_idx = 0
@@ -72,7 +72,8 @@ while True:
     if for_idx > 8:
         break
 
-    print(f"Reading scan no. {for_idx}")
+    print(f"Reading scan no. {for_idx}, starting timer (measured in process time)")
+    tstart = time.process_time()
     # grab scan, currently placeholder for lidar scan call
     curr_scan_pts = Ptutils.readScan(f"data/{for_idx}.npz")
 
@@ -92,6 +93,8 @@ while True:
 
     dnn = None
     prev_scan_down_pts = Ptutils.random_sampling(prev_scan_pts, num_points=args.num_icp_points)
+
+    print("Read & downsampling complete: time since start is " + str(time.process_time() - tstart))
     if args.use_open3d: # calc odometry using open3d
         #print("Using Open3D")
         source = o3d.geometry.PointCloud()
@@ -112,6 +115,7 @@ while True:
         #print("Using custom ICP")
         odom_transform, dnn, _ = ICP.icp(curr_scan_down_pts, prev_scan_down_pts, init_pose=icp_initial, max_iterations=icp_tries, tolerance=icp_tolerance)
 
+    print("ICP complete: time since start is " + str(time.process_time() - tstart))
     # update the current (moved) pose
     PGM.curr_se3 = np.matmul(PGM.curr_se3, odom_transform)
     icp_initial = odom_transform # assumption: constant velocity model (for better next ICP converges)
@@ -123,8 +127,9 @@ while True:
     transformed = transformed.T
     base = base.T
 
-    # build map here
-
+    print("Starting map build operation")
+    world.update(transformed)
+    print("Map built & propagated in " + str(time.process_time() - tstart))
     # add the odometry factor to the graph
     PGM.addOdometryFactor(odom_transform)
 
@@ -153,4 +158,8 @@ while True:
 
     # save the ICP odometry pose result (no loop closure)
     ResultSaver.saveUnoptimizedPoseGraphResult(PGM.curr_se3, PGM.curr_node_idx)
+    print("Loop closure and final I/O complete, full iteration took " + str(time.process_time() - tstart))
+    print()
     for_idx += 1
+
+world.export("world/")
