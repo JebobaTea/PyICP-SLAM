@@ -14,6 +14,7 @@ from utils.ScanContextManager import *
 from utils.PoseGraphManager import *
 from utils.UtilsMisc import *
 from utils.MapManager import *
+# from utils.Scanner import *
 import utils.UtilsPointcloud as Ptutils
 import utils.ICP as ICP
 import open3d as o3d
@@ -21,6 +22,7 @@ import open3d as o3d
 # params
 parser = argparse.ArgumentParser(description='PyICP SLAM arguments')
 
+# roughly 500 points can be expected
 parser.add_argument('--num_icp_points', type=int, default=2500) # 5000 is enough for real time
 parser.add_argument('--num_rings', type=int, default=20) # same as the original paper
 parser.add_argument('--num_sectors', type=int, default=60) # same as the original paper
@@ -63,7 +65,12 @@ SCM = ScanContextManager(shape=[args.num_rings, args.num_sectors],
                                         threshold=args.loop_threshold)
 
 # mapping class
-world = World(clip_prec=2, start_weight=4096, cull_threshold=10000)
+world = World(clip_prec=1, start_weight=8, cull_threshold=10000)
+
+# init lidar
+# scanner = YDScanner()
+# if not scanner.activate():
+#    raise RuntimeError("Lidar did not wake up, check USB and init parameters")
 
 # @@@ MAIN @@@: data stream
 for_idx = 0
@@ -76,6 +83,9 @@ while True:
     tstart = time.process_time()
     # grab scan, currently placeholder for lidar scan call
     curr_scan_pts = Ptutils.readScan(f"data/{for_idx}.npz")
+
+    # actual data
+    # _, curr_scan_pts = scanner.run_scan()
 
     curr_scan_down_pts = Ptutils.random_sampling(curr_scan_pts, num_points=args.num_icp_points)
     if not curr_scan_down_pts.all():
@@ -163,3 +173,8 @@ while True:
     for_idx += 1
 
 world.export("world/")
+wa = world.grid.generateWaypoints(-24, 50, 24, -14)
+with open("path.npz", "wb+") as f:
+    np.save(f, np.array(wa))
+
+# scanner.deactivate()
